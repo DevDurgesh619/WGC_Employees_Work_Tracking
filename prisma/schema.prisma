@@ -1,0 +1,171 @@
+// Wallick Work Tracker — schema mirrors DATA_MODEL.md.
+// Source of truth: ../DATA_MODEL.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  FOUNDER
+  EMPLOYEE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+  BLOCKED
+  CANCELLED
+}
+
+enum WorkLogStatus {
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskRequestStatus {
+  OPEN
+  FULFILLED
+  DECLINED
+}
+
+model User {
+  id             String   @id @default(cuid())
+  supabaseUserId String   @unique @map("supabase_user_id")
+  email          String   @unique
+  name           String
+  role           Role     @default(EMPLOYEE)
+  timezone       String   @default("Asia/Kolkata")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  assignedTasks     Task[]        @relation("TaskAssignee")
+  createdTasks      Task[]        @relation("TaskCreator")
+  workLogs          WorkLog[]
+  timeEntries       TimeEntry[]
+  taskRequests      TaskRequest[] @relation("TaskRequestRequester")
+  fulfilledRequests TaskRequest[] @relation("TaskRequestFulfiller")
+  auditLogs         AuditLog[]
+
+  @@map("users")
+}
+
+model Task {
+  id               String       @id @default(cuid())
+  title            String       @db.VarChar(120)
+  description      String?      @db.VarChar(2000)
+  priority         TaskPriority @default(MEDIUM)
+  status           TaskStatus   @default(NOT_STARTED)
+  assigneeId       String       @map("assignee_id")
+  createdById      String       @map("created_by_id")
+  dueDate          DateTime?    @map("due_date") @db.Date
+  estimatedMinutes Int?         @map("estimated_minutes")
+  startedAt        DateTime?    @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime?    @map("completed_at") @db.Timestamptz(6)
+  deletedAt        DateTime?    @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  assignee     User          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  createdBy    User          @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  workLogs     WorkLog[]
+  timeEntries  TimeEntry[]
+  taskRequests TaskRequest[]
+
+  @@index([assigneeId, status, dueDate])
+  @@index([createdById])
+  @@index([deletedAt])
+  @@map("tasks")
+}
+
+model WorkLog {
+  id           String        @id @default(cuid())
+  userId       String        @map("user_id")
+  date         DateTime      @db.Date
+  taskId       String?       @map("task_id")
+  freeTextTask String?       @map("free_text_task") @db.VarChar(120)
+  description  String        @db.VarChar(2000)
+  minutes      Int
+  output       String?       @db.VarChar(2000)
+  status       WorkLogStatus
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([userId, date])
+  @@index([taskId])
+  @@index([date])
+  @@map("work_logs")
+}
+
+model TimeEntry {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  taskId    String?   @map("task_id")
+  startedAt DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
+  minutes   Int?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([taskId])
+  @@map("time_entries")
+}
+
+model TaskRequest {
+  id                String            @id @default(cuid())
+  requesterId       String            @map("requester_id")
+  message           String?           @db.VarChar(500)
+  status            TaskRequestStatus @default(OPEN)
+  declineReason     String?           @map("decline_reason") @db.VarChar(500)
+  fulfilledByTaskId String?           @map("fulfilled_by_task_id")
+  fulfilledByUserId String?           @map("fulfilled_by_user_id")
+  respondedAt       DateTime?         @map("responded_at") @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  requester       User  @relation("TaskRequestRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  fulfilledByTask Task? @relation(fields: [fulfilledByTaskId], references: [id], onDelete: Restrict)
+  fulfilledByUser User? @relation("TaskRequestFulfiller", fields: [fulfilledByUserId], references: [id], onDelete: Restrict)
+
+  @@index([requesterId])
+  @@index([status])
+  @@map("task_requests")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  diff       Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@map("audit_logs")
+}

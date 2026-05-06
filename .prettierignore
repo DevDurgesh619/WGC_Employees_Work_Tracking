@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+build
+coverage
+playwright-report
+test-results
+pnpm-lock.yaml
+next-env.d.ts
+public
+
+# Project documentation is hand-maintained — do not auto-format.
+*.md
